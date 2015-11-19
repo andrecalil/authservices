@@ -25,5 +25,15 @@ namespace Kentor.AuthServices.Configuration
         /// Information about known identity providers.
         /// </summary>
         IdentityProviderDictionary IdentityProviders { get; }
+
+        /// <summary>
+        /// IdP Public Key to Validate incoming Responses
+        /// </summary>
+        System.Security.Cryptography.X509Certificates.X509Certificate2 IdpPublicKey { get; set; }
+
+        /// <summary>
+        /// Use the public key set in options instead of keys from IdP
+        /// </summary>
+        bool ValidateUsingPublicKey { get; set; }
     }
 }

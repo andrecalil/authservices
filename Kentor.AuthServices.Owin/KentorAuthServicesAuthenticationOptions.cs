@@ -9,6 +9,7 @@ using System.IdentityModel.Metadata;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Security.Cryptography.X509Certificates;
 
 namespace Kentor.AuthServices.Owin
 {
@@ -76,5 +77,15 @@ namespace Kentor.AuthServices.Owin
                 Description.Caption = value;
             }
         }
+
+        /// <summary>
+        /// Public key to use in response validation
+        /// </summary>
+        public X509Certificate2 IdpPublicKey { get; set; }
+
+        /// <summary>
+        /// Use public key instead of IdP signing keys
+        /// </summary>
+        public bool ValidateUsingPublicKey { get; set; }
     }
 }

@@ -335,6 +335,11 @@ namespace Kentor.AuthServices.Saml2P
             }
         }
 
+        /// <summary>
+        /// If you are manually handling your requests ID, set this property to have the proper response validation.
+        /// </summary>
+        public string ExpectedResponseID { get; set; }
+
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Naming", "CA2204:Literals should be spelled correctly", MessageId = "InResponseTo")]
         private void ValidateInResponseTo(IOptions options)
         {
@@ -347,6 +352,16 @@ namespace Kentor.AuthServices.Saml2P
                 string msg = string.Format(CultureInfo.InvariantCulture,
                     "Unsolicited responses are not allowed for idp \"{0}\".", Issuer.Id);
                 throw new Saml2ResponseFailedValidationException(msg);
+            }
+            else if(!String.IsNullOrEmpty(this.ExpectedResponseID))
+            {
+                if (InResponseTo.Value != ExpectedResponseID)
+                {
+                    string msg = string.Format(CultureInfo.InvariantCulture,
+                        "Replayed or unknown InResponseTo \"{0}\".", InResponseTo);
+
+                    throw new Saml2ResponseFailedValidationException(msg);
+                }
             }
             else
             {
@@ -372,20 +387,49 @@ namespace Kentor.AuthServices.Saml2P
 
         private void ValidateSignature(IOptions options)
         {
-            var idpKeys = options.IdentityProviders[Issuer].SigningKeys;
+            if (options.ValidateUsingPublicKey)
+            {
+                ValidateSignature(options.IdpPublicKey);
+            }
+            else
+            {
+                var idpKeys = options.IdentityProviders[Issuer].SigningKeys;
 
+                // If the response message is signed, we check just this signature because the whole content has to be correct then
+                var responseSignature = xmlDocument.DocumentElement["Signature", SignedXml.XmlDsigNamespaceUrl];
+                if (responseSignature != null)
+                {
+                    CheckSignature(XmlDocument.DocumentElement, idpKeys);
+                }
+                else
+                {
+                    // If the response message is not signed, all assersions have to be signed correctly
+                    foreach (var assertionNode in AllAssertionElementNodes)
+                    {
+                        CheckSignature(assertionNode, idpKeys);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// If you have the certificate that should be signing this response, you can use it to validate if content was not tampered.
+        /// </summary>
+        /// <param name="signingKey">Certificate received from the IdP</param>
+        private  void ValidateSignature(X509Certificate2 signingKey)
+        {
             // If the response message is signed, we check just this signature because the whole content has to be correct then
             var responseSignature = xmlDocument.DocumentElement["Signature", SignedXml.XmlDsigNamespaceUrl];
             if (responseSignature != null)
             {
-                CheckSignature(XmlDocument.DocumentElement, idpKeys);
+                CheckSignature(XmlDocument.DocumentElement, signingKey);
             }
             else
             {
                 // If the response message is not signed, all assersions have to be signed correctly
                 foreach (var assertionNode in AllAssertionElementNodes)
                 {
-                    CheckSignature(assertionNode, idpKeys);
+                    CheckSignature(assertionNode, signingKey);
                 }
             }
         }
@@ -444,6 +488,70 @@ namespace Kentor.AuthServices.Saml2P
             try
             {
                 if (!idpKeys.Any(signedXml.CheckSignature))
+                {
+                    throw new Saml2ResponseFailedValidationException("Signature validation failed on SAML response or contained assertion.");
+                }
+            }
+            catch (CryptographicException)
+            {
+                if (signedXml.SignatureMethod == Options.RsaSha256Namespace && CryptoConfig.CreateFromName(signedXml.SignatureMethod) == null)
+                {
+                    throw new Saml2ResponseFailedValidationException("SHA256 signatures require the algorithm to be registered at the process level. Call Kentor.AuthServices.Configuration.Options.GlobalEnableSha256XmlSignatures() on startup to register.");
+                }
+                else
+                {
+                    throw;
+                }
+            }
+        }
+
+        /// <summary>Checks the signature against a given public key.</summary>
+        /// <param name="signedRootElement">The signed root element.</param>
+        /// <param name="certificate">The public key to validate</param>
+        private static void CheckSignature(XmlElement signedRootElement, X509Certificate2 certificate)
+        {
+            var xmlDocument = new XmlDocument { PreserveWhitespace = true };
+            xmlDocument.LoadXml(signedRootElement.OuterXml);
+
+            var signature = xmlDocument.DocumentElement["Signature", SignedXml.XmlDsigNamespaceUrl];
+            if (signature == null)
+            {
+                throw new Saml2ResponseFailedValidationException("The SAML Response is not signed and contains unsigned Assertions. Response cannot be trusted.");
+            }
+
+            var signedXml = new SignedXml(xmlDocument);
+            signedXml.LoadXml(signature);
+
+            var signedRootElementId = "#" + signedRootElement.GetAttribute("ID");
+
+            if (signedXml.SignedInfo.References.Count == 0)
+            {
+                throw new Saml2ResponseFailedValidationException("No reference found in Xml signature, it doesn't validate the Xml data.");
+            }
+
+            if (signedXml.SignedInfo.References.Count != 1)
+            {
+                throw new Saml2ResponseFailedValidationException("Multiple references for Xml signatures are not allowed.");
+            }
+
+            var reference = signedXml.SignedInfo.References.Cast<Reference>().Single();
+
+            if (reference.Uri != signedRootElementId)
+            {
+                throw new Saml2ResponseFailedValidationException("Incorrect reference on Xml signature. The reference must be to the root element of the element containing the signature.");
+            }
+
+            foreach (Transform transform in reference.TransformChain)
+            {
+                if (!allowedTransforms.Contains(transform.Algorithm))
+                {
+                    throw new Saml2ResponseFailedValidationException(
+                        "Transform \"" + transform.Algorithm + "\" found in Xml signature is not allowed in SAML.");
+                }
+            }
+            try
+            {
+                if (!signedXml.CheckSignature(certificate, true))
                 {
                     throw new Saml2ResponseFailedValidationException("Signature validation failed on SAML response or contained assertion.");
                 }

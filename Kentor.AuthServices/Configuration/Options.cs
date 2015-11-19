@@ -6,6 +6,7 @@ using System.IdentityModel.Configuration;
 using System.IdentityModel.Metadata;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -69,6 +70,16 @@ namespace Kentor.AuthServices.Configuration
                 return identityProviders;
             }
         }
+        
+        /// <summary>
+        /// Public key to use in response validation
+        /// </summary>
+        public X509Certificate2 IdpPublicKey { get; set; }
+
+        /// <summary>
+        /// Use public key instead of IdP signing keys
+        /// </summary>
+        public bool ValidateUsingPublicKey { get; set; }
 
         static internal readonly string RsaSha256Namespace = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
 

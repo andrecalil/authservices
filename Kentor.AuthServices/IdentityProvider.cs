@@ -152,6 +152,23 @@ namespace Kentor.AuthServices
             }
         }
 
+        private Saml2BindingType logOutBinding;
+
+        /// <summary>
+        /// The binding used when sending LogoutRequest to the identity provider.
+        /// </summary>
+        public Saml2BindingType LogOutBinding
+        {
+            get
+            {
+                return logOutBinding;
+            }
+            set
+            {
+                logOutBinding = value;
+            }
+        }
+
         private Uri singleSignOnServiceUrl;
 
         /// <summary>
@@ -169,6 +186,25 @@ namespace Kentor.AuthServices
             set
             {
                 singleSignOnServiceUrl = value;
+            }
+        }
+
+        private Uri singleLogOutServiceUrl;
+
+        /// <summary>
+        /// The Url of the single log out service. This is where the browser is redirected or
+        /// where the post data is sent to when sending an LogoutRequest to the idp.
+        /// </summary>
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Naming", "CA1726:UsePreferredTerms", MessageId = "SignOn")]
+        public Uri SingleLogOutServiceUrl
+        {
+            get
+            {
+                return singleLogOutServiceUrl;
+            }
+            set
+            {
+                singleLogOutServiceUrl = value;
             }
         }
 
@@ -343,6 +379,14 @@ namespace Kentor.AuthServices
 
             binding = Saml2Binding.UriToSaml2BindingType(ssoService.Binding);
             singleSignOnServiceUrl = ssoService.Location;
+
+            var logoutService = idpDescriptor.SingleLogoutServices
+                .FirstOrDefault(s => s.Binding == Saml2Binding.HttpRedirectUri) ??
+                idpDescriptor.SingleLogoutServices
+                .First(s => s.Binding == Saml2Binding.HttpPostUri);
+
+            logOutBinding = Saml2Binding.UriToSaml2BindingType(logoutService.Binding);
+            singleLogOutServiceUrl = logoutService.Location;
 
             var keys = idpDescriptor.Keys.Where(k => k.Use == KeyType.Unspecified || k.Use == KeyType.Signing);
 
